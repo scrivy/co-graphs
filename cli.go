@@ -77,6 +77,14 @@ func update(rrdFilename, csvFilename string) {
 	}
 	defer csvFile.Close()
 	scanner := bufio.NewScanner(csvFile)
+
+	// make a graph when the next value crosses midnight
+	var previousDay int
+	timeLocation, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		panic(err)
+	}
+
 	for scanner.Scan() {
 		record := strings.Split(scanner.Text(), ",")
 		if err := scanner.Err(); err != nil {
@@ -95,8 +103,18 @@ func update(rrdFilename, csvFilename string) {
 		if err != nil {
 			panic(err)
 		}
-		recordedAt = recordedAt.Add(time.Hour * 8) // adjust to utc
+		// graph if 24 hours has elapsed
+		switch {
+		case previousDay == 0:
+			previousDay = recordedAt.Day()
+		case previousDay != recordedAt.Day():
+			year, month, day := recordedAt.Date()
+			previousMidnight := time.Date(year, month, day, 0, 0, 0, 0, timeLocation).AddDate(0, 0, -1)
+			graph(rrdFilename, previousMidnight.Format(time.RFC3339))
+			previousDay = recordedAt.Day()
+		}
 
+		recordedAt = recordedAt.Add(time.Hour * 8) // pst to utc
 		update := fmt.Sprintf("%d:%s", recordedAt.Unix(), value)
 		//		fmt.Println(update)
 		output, err := exec.Command("rrdtool", "update", rrdFilename, update).CombinedOutput()
