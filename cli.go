@@ -16,6 +16,12 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "create":
+		if len(os.Args) != 4 {
+			cliHelp()
+			os.Exit(1)
+		}
+		create(os.Args[2], os.Args[3])
 	case "update":
 		if len(os.Args) != 4 {
 			cliHelp()
@@ -35,13 +41,34 @@ func main() {
 
 func cliHelp() {
 	fmt.Println(`
-wrong
-
+create [.rrd file] [start time 2006-01-02T15:04:05Z07:00]
 update [.rrd file] [.csv file]
-graph [.rrd file] [24 hour start 2006-01-02T15:04:05Z07:00]`)
+graph  [.rrd file] [start time 2006-01-02T15:04:05Z07:00]
+`)
 }
 
 const timeFormat = "2006-01-02 15:04:05"
+
+func create(rrdFilename, startTimeStr string) {
+	startTime, err := time.Parse(time.RFC3339, startTimeStr)
+	if err != nil {
+		panic(err)
+	}
+	output, err := exec.Command(
+		"rrdcreate", rrdFilename,
+		"--start", fmt.Sprintf("%d", startTime.Unix()),
+		"--step", "1m",
+		"--no-overwrite",
+		"DS:co_ppm:GAUGE:200:0:U",
+		"RRA:MAX:0.5:1m:3M",
+	).CombinedOutput()
+	if len(output) > 0 {
+		fmt.Printf("%s\n", output)
+	}
+	if err != nil {
+		panic(err)
+	}
+}
 
 func update(rrdFilename, csvFilename string) {
 	csvFile, err := os.Open(csvFilename)
@@ -90,7 +117,7 @@ func graph(rrdFilename, timeStr string) {
 	outputFilename := start.Format("2006_01_02") + ".png"
 	output, err := exec.Command(
 		"rrdtool", "graphv", outputFilename,
-		"DEF:co_ppm="+rrdFilename+":co_ppm:AVERAGE",
+		"DEF:co_ppm="+rrdFilename+":co_ppm:MAX",
 		"--start", fmt.Sprintf("%d", start.Unix()),
 		"--end", "start+24h",
 		"LINE1:co_ppm#0000FF:co (ppm)",
